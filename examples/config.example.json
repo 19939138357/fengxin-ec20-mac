@@ -1,0 +1,11 @@
+{
+  "desktop": true,
+  "at_port": "usb:2c7c:0125",
+  "audio_device": "AC Interface|AS Interface",
+  "sip_listen": "127.0.0.1:5068",
+  "sip_advertise_ip": "127.0.0.1",
+  "sip_username": "1001",
+  "sip_password": "",
+  "web_listen": "127.0.0.1:7576",
+  "web_password": ""
+}

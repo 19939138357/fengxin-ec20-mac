@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>蜂信 · 电话短信网关</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{font:16px system-ui,sans-serif;background:#f3f6f5;color:#173331;max-width:1160px;margin:36px auto;padding:0 24px}header{padding-bottom:24px}h1{font-size:32px;margin:8px 0}h2{font-size:21px;margin-top:0}small,.muted{color:#58726c;line-height:1.65}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}section{background:white;border:1px solid #d3ddda;border-radius:12px;padding:24px;min-width:0}.wide{grid-column:1/-1}pre{font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7}.status{padding:12px 16px;border-radius:8px;background:#fff0d2}.ok{background:#dff3e9}label{display:block;margin:12px 0 6px}input,textarea,select{width:100%;padding:11px;font:inherit;border:1px solid #9cafaa;border-radius:6px;background:white}input[type=checkbox]{width:auto;vertical-align:middle;margin-right:8px}button{padding:11px 18px;background:#087367;color:white;border:0;border-radius:6px;font:inherit;margin-top:14px;cursor:pointer}button.secondary{background:#e5efec;color:#17463d}button:disabled{opacity:.5;cursor:wait}.result{white-space:pre-wrap;font-size:14px;overflow-wrap:anywhere}.fields{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}.entry{padding:14px 0;border-top:1px solid #e0e8e5}.entry p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.entry .meta{font-size:13px;color:#58726c}.pill{font-size:12px;background:#eef3f1;border-radius:4px;padding:3px 6px;margin-left:8px}summary{cursor:pointer;font-weight:600}footer{margin:24px 0;color:#58726c;font-size:13px}#inbox,#events{max-height:440px;overflow:auto}.empty{padding:16px 0;color:#58726c}@media(max-width:750px){body{padding:0 16px;margin:20px auto}.grid,.fields{grid-template-columns:1fr}section{padding:20px}h1{font-size:27px}}
+</style></head><body>
+<header><small>EC20 · macOS · 手机 SIP</small><h1>蜂信 电话短信网关</h1><div id="state" class="status">正在读取模组状态…</div></header>
+<div class="grid">
+<section class="wide" id="networkPanel"><h2>手动选网</h2><p class="muted">先扫描运营商并选择，也可手填运营商代码。扫描或注册通常需要几十秒，最长约 3 分钟；操作期间请勿拔出模组或发起通话。</p>
+<button id="scanNetwork" type="button">扫描运营商</button> <button id="autoNetwork" class="secondary" type="button">恢复自动选网</button>
+<label for="operators">扫描结果</label><select id="operators"><option value="">尚未扫描；也可在下方手填代码</option></select>
+<form id="manualNetwork"><div class="fields"><div><label for="plmn">运营商代码（PLMN）</label><input id="plmn" inputmode="numeric" pattern="[0-9]{5,6}" maxlength="6" required placeholder="5 或 6 位数字，例如 46011"></div><div><label for="rat">网络制式</label><select id="rat"><option value="7">4G LTE</option><option value="-1">由模组选择</option><option value="2">3G WCDMA</option><option value="0">2G GSM</option><option value="100">CDMA（需模组支持）</option></select></div></div>
+<label><input id="networkFallback" type="checkbox" checked>手动选择失败后，恢复自动选网</label><button id="registerNetwork">手动注册</button></form>
+<p id="networkState" class="status" role="status" aria-live="polite">正在读取选网状态…</p><pre id="networkLog" hidden></pre><small>“命令已执行”不等于已经入网。请以下方“模组与网络”的实时注册状态为准。恢复自动选网也需要等待当前操作结束。</small></section>
+<section><h2>模组与网络</h2><pre id="modem">连接中…</pre><small>网络注册后，才能通过 SIM 拨打电话和收发短信。</small></section>
+<section><h2>手机 SIP 电话</h2><pre id="sip"></pre><p>手机与 Mac 连接同一个 Wi-Fi，在手机 SIP 客户端中添加 SIP 账户。连接后，在手机输入号码拨打，来电也由手机接听。</p><small>传输选择 UDP，音频编码选择 PCMU / G.711 μ-law。关闭 STUN、ICE 和必需的媒体加密。客户端需保持在线；本版未接入手机后台推送。</small><br><button id="showSIP" class="secondary" type="button">显示手机连接参数</button><pre id="sipSettings" hidden></pre></section>
+<section><h2>发送短信</h2><form id="sms"><label for="number">接收号码</label><input id="number" required pattern="\+?[0-9]{3,20}" autocomplete="off"><label for="text">短信内容</label><textarea id="text" rows="4" required maxlength="500"></textarea><button id="send">发送一条短信</button></form><p id="result" class="result" role="status"></p><small>当前发送支持单条短信；模组受理后仍需确认收件人收到。</small></section>
+<section><h2>收到的短信</h2><small id="receiver">正在读取收件状态…</small><div id="inbox"></div><small>首次启动时已有短信仅归档展示，不自动转发；不会自动删除 SIM 中的短信。</small></section>
+<section class="wide"><h2>使用提示</h2><p>网页用于查看网络和收发短信，电话声音由手机 SIP 客户端收听。Mac 和 EC20 需保持连接并运行；网络地址变化后，请重启网关并更新手机中的服务器地址。</p><small>当前 Mac 版保留本地来电记录，暂未提供邮件转发配置。</small></section><section class="wide"><h2>来电记录</h2><div id="events"></div><small>来电事件保存在本机。手机后台是否能持续接听，取决于 SIP 客户端和系统的后台运行能力。</small></section>
+</div><footer id="version"></footer>
+<script>
+const $=id=>document.getElementById(id);
+async function api(path,body){let r=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error((await r.text()).trim());return r.json()}
+function date(t){return t?new Date(t).toLocaleString('zh-CN'):'时间未知'}
+function entry(title,body,meta,badge){let e=document.createElement('article');e.className='entry';let h=document.createElement('strong');h.textContent=title;e.append(h);if(badge){let b=document.createElement('span');b.className='pill';b.textContent=badge;e.append(b)}let p=document.createElement('p');p.textContent=body;e.append(p);let m=document.createElement('div');m.className='meta';m.textContent=meta;e.append(m);return e}
+function empty(node,text){node.replaceChildren();let p=document.createElement('p');p.className='empty';p.textContent=text;node.append(p)}
+const states={pending:'等待发送',queued:'等待发送',sending:'正在发送',sent:'服务器已接受',disabled:'转发未启用',failed:'发送失败',retry:'等待重试',uncertain:'结果不确定',cancelled:'已取消'};
+let modemConnected=false,smsSubmitting=false,networkBusy=false,networkSubmitting=false;
+function updateSendButton(){$('send').disabled=!modemConnected||smsSubmitting||networkBusy;updateNetworkButtons()}
+function updateNetworkButtons(){for(let id of ['scanNetwork','autoNetwork','registerNetwork','operators','plmn','rat','networkFallback'])$(id).disabled=!modemConnected||networkBusy||networkSubmitting}
+let networkOptions=[],networkPollActive=false,lastNetworkJob='';
+const networkNames={scan:'扫描运营商',manual:'手动注册',auto:'恢复自动选网'};
+function renderNetwork(job){
+ networkBusy=job.state==='running';updateSendButton();
+ let label=networkNames[job.action]||'选网';
+ if(networkBusy){let elapsed=Math.max(0,Math.floor((Date.now()-Date.parse(job.started))/1000));$('networkState').textContent=label+'正在执行 · 已等待 '+elapsed+' 秒，请勿重复操作。'}
+ else if(job.state==='error')$('networkState').textContent=label+'未完成：'+job.error;
+ else if(job.state==='done')$('networkState').textContent=job.action==='scan'?('扫描完成 · 发现 '+(job.result.operators||[]).length+' 项网络。没有结果时可手填代码尝试注册。'):'命令已执行，请查看下方实时注册状态；仍在搜网时不代表已入网。';
+ else $('networkState').textContent='尚未执行选网操作。请选择扫描或手动注册。';
+ $('networkState').className='status'+(job.state==='done'?' ok':'');
+ const key=job.id+':'+job.state;
+ if(key!==lastNetworkJob){lastNetworkJob=key;
+  $('networkLog').textContent=(job.result?.log||[]).join('\n');$('networkLog').hidden=!$('networkLog').textContent;
+  if(job.action==='scan'&&job.state!=='running'){
+   networkOptions=job.result?.operators||[];$('operators').replaceChildren(new Option(networkOptions.length?'请选择运营商':'没有可用扫描结果，可手填代码',''));
+   networkOptions.forEach((o,i)=>{let opt=new Option(o.name+' · '+o.plmn+' · 制式 '+o.rat+' · '+(['状态未知','可用','当前网络','禁止接入'][o.status]||'未知'),String(i));opt.disabled=o.status===3;$('operators').append(opt)});
+  }
+ }
+}
+async function pollNetwork(){if(networkPollActive)return;networkPollActive=true;try{renderNetwork(await api('/api/network'))}catch(e){$('networkState').textContent='无法读取选网状态：'+e.message+'。请刷新确认，勿重复提交。'}finally{networkPollActive=false}}
+async function submitNetwork(body){if(networkBusy||networkSubmitting||!modemConnected)return;networkSubmitting=true;updateNetworkButtons();try{renderNetwork(await api('/api/network',body))}catch(e){await pollNetwork();if(!networkBusy)$('networkState').textContent='未确认操作提交：'+e.message+'。请检查后再试。'}finally{networkSubmitting=false;updateNetworkButtons()}}
+$('scanNetwork').onclick=()=>submitNetwork({action:'scan'});
+$('autoNetwork').onclick=()=>submitNetwork({action:'auto'});
+$('manualNetwork').onsubmit=e=>{e.preventDefault();submitNetwork({action:'manual',plmn:$('plmn').value.trim(),rat:Number($('rat').value),fallback:$('networkFallback').checked})};
+$('operators').onchange=()=>{if($('operators').value==='')return;let o=networkOptions[Number($('operators').value)];$('plmn').value=o.plmn;let rat=o.rat===3?0:([4,5,6].includes(o.rat)?2:o.rat);$('rat').value=String([-1,0,2,7,100].includes(rat)?rat:-1)};
+async function refresh(){try{let s=await api('/api/status'),m=s.modem;modemConnected=m.connected===true;updateSendButton();$('state').textContent=!modemConnected?'USB 已断开 · 请重新插好模组后运行 启动蜂信.command':(m.error?'模组通信异常：'+m.error:(m.registered?'模组已注册网络':'模组已连接 · 尚未注册运营商网络'));$('state').className='status'+(modemConnected&&m.registered&&!m.error?' ok':'');let details=[m.port,m.model,'状态更新时间：'+date(m.last_updated)];if(modemConnected)details.push(m.sim,m.registration,m.signal,m.radio,m.operator);else details.push('实时网络读数不可用；重新启动后会读取当前状态。');if(m.error)details.push(m.error);$('modem').textContent=details.filter(Boolean).join('\n');$('sip').textContent='服务器：'+s.sip_listen+'\n账号：'+s.sip_username+'\n在线软电话：'+s.sip_registered+'\n模组声卡：'+s.audio_device;$('version').textContent='版本 '+s.version+' · 蜂信 个人非商业派生版'}catch(e){modemConnected=false;updateSendButton();$('state').textContent='无法读取服务：'+e.message;$('state').className='status';$('modem').textContent='当前模组状态不可用。'}
+try{let data=await api('/api/inbox'),list=data.messages||[];$('receiver').textContent=!data.receiver.running?'短信接收已停止，请重新启动网关。':(data.receiver.error?'收件异常：'+data.receiver.error:(data.receiver.ready?(data.receiver.storage_full?'短信存储已满，请先备份并清理模组短信。':'正在监听新短信')+' · 最近检查 '+date(data.receiver.last_scan):'正在初始化短信接收…'));empty($('inbox'),'还没有收到短信。');if(list.length){$('inbox').replaceChildren();list.slice(0,100).forEach(m=>$('inbox').append(entry(m.number||'未知号码',m.text,date(m.received_at),m.historical?'已有短信':'')))}}catch(e){$('receiver').textContent='收件状态：'+e.message}
+try{let list=await api('/api/notifications/events');empty($('events'),'尚无来电或转发记录。');if(list.length){$('events').replaceChildren();list.forEach(e=>$('events').append(entry(e.title,e.body,date(e.occurred_at)+(e.last_error?' · '+e.last_error:''),states[e.status]||e.status)))}}catch(e){empty($('events'),'无法读取记录：'+e.message)}}
+$('sms').addEventListener('submit',async e=>{e.preventDefault();if(!modemConnected||smsSubmitting)return;smsSubmitting=true;updateSendButton();$('result').textContent='正在提交，请勿重复发送…';try{await api('/api/sms',{number:$('number').value.trim(),text:$('text').value});$('result').textContent='模组已受理。请在接收手机上确认是否到达。'}catch(err){$('result').textContent='未确认发送成功：'+err.message}finally{smsSubmitting=false;updateSendButton()}});
+$('showSIP').onclick=async()=>{if(!$('sipSettings').hidden){$('sipSettings').textContent='';$('sipSettings').hidden=true;$('showSIP').textContent='显示手机连接参数';return}try{let s=await api('/api/sip-settings',{});$('sipSettings').textContent='服务器 / 域名：'+s.host+':'+s.port+'\n用户名 / 认证 ID：'+s.username+'\n密码：'+s.password+'\n传输：'+s.transport+'\n编码：'+s.codec+'\n认证域（若要求填写）：'+s.realm;$('sipSettings').hidden=false;$('showSIP').textContent='隐藏手机连接参数'}catch(e){$('sipSettings').textContent=e.message;$('sipSettings').hidden=false}};
+updateSendButton();refresh();pollNetwork();setInterval(refresh,5000);setInterval(pollNetwork,2000);
+</script></body></html>

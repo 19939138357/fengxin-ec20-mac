@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>蜂信</string>
+	<key>CFBundleExecutable</key>
+	<string>FengxinMac</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.zjx.fengxin.mac</string>
+	<key>CFBundleName</key>
+	<string>蜂信</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>10</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>27.0</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>用于在电脑上通过 EC20 SIM 卡通话，将所选麦克风声音传给对方。</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>读取本项目中的短信记录、联系人和设置，并在项目文件夹内保存草稿与发送记录。</string>
+</dict>
+</plist>
