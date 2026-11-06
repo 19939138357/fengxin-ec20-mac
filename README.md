@@ -39,7 +39,7 @@ mac/app/build-app.command
 
 ## 使用
 
-1. 退出其他占用同一 EC20 控制口的软件，连接模块并打开生成的蜂信应用。
+1. 打开蜂信。未插 EC20 时也可以查看本地短信、编辑草稿，或在「邮箱转发」设置收件邮箱。连接模块前请退出其他占用 EC20 控制口的软件。
 2. 在“设备与设置”确认 SIM 和蜂窝注册状态，选择并保存麦克风、扬声器。
 3. 在电话或短信页输入自己的收件号码；应用不会预置测试号码或自动外发。
 4. 邮箱转发按需在应用内配置，授权码只在本机填写。首次历史短信不批量重放，结果不明确的投递不自动重发。
@@ -64,6 +64,16 @@ Python 的恢复和 USB 管道测试使用合成设备，不接入真实模组�
 
 ```sh
 python3 -m unittest discover -s mac/tests -v
+```
+
+Mac 原生界面可使用模拟设备状态测试拨号和发送按钮、草稿恢复，以及各页面独立刷新失败时的表现。请从仓库根目录执行：
+
+```sh
+mkdir -p .build
+xcrun swiftc -swift-version 5 -D FENGXIN_MODEL_TESTS \
+  mac/app/FengxinCore.swift mac/app/FengxinMac.swift mac/tests/FengxinOfflineTests.swift \
+  -o .build/fengxin-offline-tests
+.build/fengxin-offline-tests
 ```
 
 在 Mac 上运行 Go 通知及入口测试时，必须启用隔离钥匙串测试标签：

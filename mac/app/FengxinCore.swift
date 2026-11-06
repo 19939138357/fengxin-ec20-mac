@@ -14,8 +14,18 @@ enum FXRules {
         return f.date(from:raw) ?? ISO8601DateFormatter().date(from:raw)
     }
     static func time(_ raw: String) -> String { guard let date=date(raw) else{return raw};let f=DateFormatter();f.locale=Locale(identifier:"zh_CN");f.dateFormat="MM月dd日 HH:mm";return f.string(from:date) }
-    static func network(service:Bool,device:Bool,sim:Bool,registered:Bool,starting:Bool) -> String {
-        if starting {return "正在连接"};if !service{return "服务未启动"};if !device{return "未连接 EC20"};if !sim{return "SIM 未就绪"};return registered ? "网络已注册":"正在搜网"
+    // The status query returns "+CREG: <mode>,<state>" and its LTE equivalent.
+    static func registrationLabel(_ report: String) -> String {
+        let states = report.components(separatedBy: .newlines).compactMap { line -> Int? in
+            let fields = line.trimmingCharacters(in: .whitespaces).split(separator: ":", maxSplits: 1)
+            guard fields.count == 2, fields[0] == "+CREG" || fields[0] == "+CEREG" else { return nil }
+            let values = fields[1].split(separator: ",", omittingEmptySubsequences: false)
+            guard values.count >= 2 else { return nil }
+            return Int(values[1].trimmingCharacters(in: .whitespaces))
+        }
+        if states.contains(2) { return "正在搜网" }
+        if states.contains(3) { return "网络拒绝注册" }
+        return "尚未注册网络"
     }
 }
 struct FXContact: Codable,Identifiable { var id=UUID().uuidString;var name:String;var number:String }

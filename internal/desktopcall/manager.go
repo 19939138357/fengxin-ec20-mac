@@ -206,6 +206,7 @@ func (m *Manager) Action(action, number string, muted bool) error {
 	s := m.Snapshot()
 	switch action {
 	case "dial", "answer":
+		modemStatus := m.modem.Snapshot()
 		if action == "dial" {
 			if !numberRE.MatchString(number) {
 				return errors.New("请输入有效电话号码")
@@ -213,9 +214,11 @@ func (m *Manager) Action(action, number string, muted bool) error {
 			if s.State != "idle" {
 				return errors.New("已有通话，请先挂断")
 			}
-			if !m.modem.Snapshot().Registered {
-				return errors.New("EC20 尚未注册运营商网络，暂不能拨号")
+			if err := modemStatus.RequireRegistration(); err != nil {
+				return err
 			}
+		} else if !modemStatus.Connected {
+			return winmodem.ErrDisconnected
 		}
 		if action == "answer" && (s.State != "ringing" || !s.Incoming) {
 			return errors.New("没有待接听来电")

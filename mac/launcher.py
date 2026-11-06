@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import socket
 import subprocess
 import sys
 import time
@@ -49,9 +50,24 @@ def request(cfg, path='/api/status', body=None):
         headers['Content-Type'] = 'application/json'
     req = urllib.request.Request(address + path, headers=headers,
                                  data=None if body is None else json.dumps(body).encode())
-    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=3) as response:
-        raw = response.read()
-        return json.loads(raw) if raw else None
+    try:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=3) as response:
+            raw = response.read()
+    except urllib.error.HTTPError as error:
+        # A server answered. Treating e.g. a 401 as a connection failure
+        # would start a competing gateway against the same port and modem.
+        error.close()
+        if error.code in (401, 403):
+            raise RuntimeError('本地服务拒绝了当前凭据。请确认打开的是正在运行的蜂信目录。') from error
+        raise RuntimeError(f'本地服务返回 HTTP {error.code}，请检查网关端口和日志。') from error
+    try:
+        value = json.loads(raw) if raw else None
+    except ValueError as error:
+        raise RuntimeError('本地端口返回了无法识别的内容，请检查正在运行的程序。') from error
+    if path == '/api/status' and (not isinstance(value, dict) or value.get('version') != '1.0.0-fengxin'
+                                  or not isinstance(value.get('modem'), dict)):
+        raise RuntimeError('7576 端口运行的服务与当前蜂信不匹配。')
+    return value
 
 
 def connection_file(cfg):
@@ -94,13 +110,16 @@ def main():
                 print('尚未配置网关。'); return
             recovery = managed_active(BASE)
             session = read_session(BASE)
-            if session:
+            if recovery and session:
+                # This supervisor stops its own child when it observes the
+                # session change, even between USB recovery attempts.
                 session['desired_running'] = False
                 private_write(BASE / 'data' / 'recovery-session.json', json.dumps(session) + '\n')
-            try:
-                request(cfg, '/api/shutdown', {})
-            except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
-                if not recovery:
+            else:
+                try:
+                    request(cfg)  # Verify the service before asking it to exit.
+                    request(cfg, '/api/shutdown', {})
+                except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
                     raise RuntimeError('未能联系网关，未执行强制终止。') from exc
             for _ in range(60):
                 try:
@@ -121,8 +140,6 @@ def main():
         if cfg:
             try:
                 status = request(cfg)
-                if status.get('version') != '1.0.0-fengxin':
-                    raise RuntimeError('7576 端口运行的不是当前 Mac 网关。')
                 if '--desktop' in sys.argv and not status.get('desktop'):
                     raise RuntimeError('请先停止手机 SIP 网关，再启动电脑通话模式。')
                 if not cfg.get('desktop'): connection_file(cfg)
@@ -132,21 +149,35 @@ def main():
                     subprocess.run(['/usr/bin/open', str(BASE / '手机SIP配置.txt')])
                     subprocess.run(['/usr/bin/open', 'http://' + cfg['web_listen']])
                 return
-            except (urllib.error.URLError, TimeoutError, ConnectionError):
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+                if not isinstance(getattr(error, 'reason', error), ConnectionRefusedError):
+                    raise RuntimeError('本地端口暂时无法确认，请稍后重试。') from error
                 if operation == 'status':
                     raise RuntimeError('网关未运行。')
         if operation == 'status':
             raise RuntimeError('网关尚未配置。')
+        if cfg is None:
+            # Another installation might be listening. Probe without sending
+            # credentials or writing a configuration on the first launch.
+            try:
+                with socket.create_connection(('127.0.0.1', 7576), timeout=3):
+                    pass
+            except ConnectionRefusedError:
+                pass
+            except OSError as error:
+                raise RuntimeError('本地端口暂时无法确认，请稍后重试。') from error
+            else:
+                raise RuntimeError('本地端口已被另一个服务占用。请先退出占用端口的程序。')
         if managed_active(BASE):
             # A recovery already owns this session. Never spawn another gateway
             # merely because HTTP is briefly unavailable during reconnect.
+            if not cfg:
+                raise RuntimeError('现有服务仍在运行，但缺少本地配置，无法确认身份。')
             for _ in range(45):
                 if not managed_active(BASE):
                     raise RuntimeError('原服务已停止，请重新连接设备。')
                 try:
                     status = request(cfg)
-                    if status.get('version') != '1.0.0-fengxin':
-                        raise RuntimeError('7576端口运行的不是当前Mac网关。')
                     if '--desktop' in sys.argv and not status.get('desktop'):
                         raise RuntimeError('请先停止手机SIP网关，再启动电脑通话模式。')
                     print(json.dumps({'running': True, 'modem': status['modem']}, ensure_ascii=False))

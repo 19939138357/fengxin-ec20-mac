@@ -1,3 +1,4 @@
+import http.client
 import json
 from pathlib import Path
 import signal
@@ -108,6 +109,35 @@ class RecoveryTests(unittest.TestCase):
             self.assertTrue(self.runner.tick(now))
         self.assertEqual(self.runner.processes[0].signals, [])
 
+    def test_polling_while_absent_then_attached(self):
+        self.runner.node = None
+        self.runner.status = {'connected': False}
+        with patch.object(self.runner, 'epoch', wraps=self.runner.epoch) as enumerate_usb, \
+             patch.object(self.runner, 'probe', wraps=self.runner.probe) as probe, \
+             patch.object(self.runner, 'device_free', wraps=self.runner.device_free) as lock:
+            for now in range(1, 61):
+                self.runner.tick(now)
+            self.assertEqual(probe.call_count, 12)
+            self.assertEqual(enumerate_usb.call_count, 12)
+            lock.assert_not_called()
+            self.assertEqual(self.runner.processes[0].signals, [])
+            self.runner.node = 'attached'
+            self.runner.tick(61)
+            lock.assert_called_once()
+            self.assertEqual(self.runner.processes[0].signals, [signal.SIGTERM])
+            self.runner.tick(62)
+            self.assertEqual(len(self.runner.processes), 2)
+
+    def test_healthy_control_and_stop_do_not_wait_for_hardware_scan(self):
+        with patch.object(self.runner, 'epoch') as enumerate_usb, \
+             patch.object(self.runner, 'device_free') as lock:
+            self.runner.tick(16)
+            self.save_session(False)
+            self.runner.tick(17)
+            self.assertEqual(self.runner.processes[0].signals, [signal.SIGTERM])
+            enumerate_usb.assert_not_called()
+            lock.assert_not_called()
+
     def test_external_cli_lock_is_not_interrupted(self):
         self.runner.free = False
         self.begin_loss()
@@ -125,12 +155,22 @@ class RecoveryTests(unittest.TestCase):
         policy = RecoveryPolicy()
         policy.attempted('usb-1', 0, initial=True)
         offline = {'connected': False}
-        self.assertFalse(policy.should_reconnect('usb-1', offline, 10, True))
-        self.assertTrue(policy.should_reconnect('usb-1', offline, 16, True))
+        self.assertFalse(policy.should_reconnect('usb-1', offline, 10))
+        self.assertTrue(policy.should_reconnect('usb-1', offline, 16))
         policy.attempted('usb-1', 16)
-        self.assertFalse(policy.should_reconnect('usb-1', offline, 30, True))
-        self.assertFalse(policy.should_reconnect('usb-1', offline, 100, True))
-        self.assertTrue(policy.should_reconnect('usb-2', offline, 101, True))
+        self.assertFalse(policy.should_reconnect('usb-1', offline, 30))
+        self.assertFalse(policy.should_reconnect('usb-1', offline, 100))
+        self.assertTrue(policy.should_reconnect('usb-2', offline, 101))
+
+    def test_malformed_status_is_ignored_until_the_next_poll(self):
+        with patch('device_supervisor.urllib.request.build_opener') as opener:
+            read = opener.return_value.open.return_value.__enter__.return_value.read
+            for value in ([], None, {'version': '1.0.0-fengxin', 'desktop': True, 'modem': None}):
+                with self.subTest(value=value):
+                    read.return_value = json.dumps(value).encode()
+                    self.assertIsNone(Supervisor.probe(self.runner))
+            read.side_effect = http.client.IncompleteRead(b'{')
+            self.assertIsNone(Supervisor.probe(self.runner))
 
     def test_status_probe_never_posts_business_requests(self):
         class Response:

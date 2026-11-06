@@ -3,25 +3,29 @@ package desktopcall
 import (
 	"errors"
 	"github.com/iniwex5/vohive/internal/winmodem"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
 type fakeModem struct {
-	mu         sync.Mutex
-	registered bool
-	calls      []string
-	clcc       string
-	ring       func()
-	clip       func(string)
-	end        func()
+	mu           sync.Mutex
+	disconnected bool
+	registered   bool
+	calls        []string
+	clcc         string
+	ring         func()
+	clip         func(string)
+	end          func()
 }
 
 func (f *fakeModem) Snapshot() winmodem.Status {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return winmodem.Status{Connected: true, Registered: f.registered}
+	return winmodem.Status{Connected: !f.disconnected, Registered: f.registered}
 }
 func (f *fakeModem) record(c string) error {
 	f.mu.Lock()
@@ -123,5 +127,36 @@ func TestDesktopIncomingCallbackDoesNotAnswerAutomatically(t *testing.T) {
 	}
 	if err := m.Action("answer", "", false); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDisconnectedCallRequestsNeverOpenAudio(t *testing.T) {
+	m, modem, _ := setup(t)
+	modem.mu.Lock()
+	modem.disconnected = true
+	modem.registered = false
+	modem.mu.Unlock()
+	m.startAudio = func(AudioConfig) (audioProcess, error) {
+		t.Fatal("opened audio while disconnected")
+		return nil, nil
+	}
+	for _, action := range []string{"dial", "answer"} {
+		if action == "answer" {
+			// The user clicks Answer after unplugging, before the call poll.
+			m.mu.Lock()
+			m.status = Status{State: "ringing", Incoming: true}
+			m.mu.Unlock()
+		}
+		r := httptest.NewRequest(http.MethodPost, "/api/desktop/call", strings.NewReader(`{"action":"`+action+`","number":"123456"}`))
+		w := httptest.NewRecorder()
+		m.ServeHTTP(w, r)
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), winmodem.ErrDisconnected.Error()) {
+			t.Fatalf("%s while disconnected: %d %s", action, w.Code, w.Body.String())
+		}
+	}
+	modem.mu.Lock()
+	defer modem.mu.Unlock()
+	if len(modem.calls) != 0 {
+		t.Fatalf("unexpected modem commands: %q", modem.calls)
 	}
 }

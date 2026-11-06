@@ -30,6 +30,19 @@ type Status struct {
 	Registered   bool      `json:"registered"`
 	Error        string    `json:"error,omitempty"`
 }
+
+var ErrDisconnected = errors.New("EC20 控制连接已断开，请连接模块")
+
+func (s Status) RequireRegistration() error {
+	if !s.Connected {
+		return ErrDisconnected
+	}
+	if !s.Registered {
+		return errors.New("EC20 尚未注册运营商网络")
+	}
+	return nil
+}
+
 type Modem struct {
 	port               io.ReadWriteCloser
 	name               string
@@ -202,8 +215,15 @@ func (m *Modem) commandLocked(cmd string, timeout time.Duration, prompt bool) (s
 	m.callResultExpected = callCommand
 	m.mu.Unlock()
 	defer func() { m.mu.Lock(); m.callResultExpected = false; m.mu.Unlock() }()
-	if _, err := m.port.Write([]byte(cmd)); err != nil {
-		return "", err
+	written, err := m.port.Write([]byte(cmd))
+	if err == nil && written != len(cmd) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		// Some bytes may already have reached the modem. Discard this
+		// session before another request can append an unrelated command.
+		m.Close()
+		return "", fmt.Errorf("EC20 控制口写入中断，操作结果未确认：%w", err)
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -323,8 +343,8 @@ func (m *Modem) DialCall(number string) error {
 	if !numberPattern.MatchString(number) {
 		return fmt.Errorf("invalid phone number")
 	}
-	if !m.Snapshot().Registered {
-		return fmt.Errorf("modem is not registered on cellular network")
+	if err := m.Snapshot().RequireRegistration(); err != nil {
+		return err
 	}
 	if _, err := m.ExecuteATSilent("AT+QPCMV=1,2", 3*time.Second); err != nil {
 		return err
@@ -352,8 +372,8 @@ func (m *Modem) SendSMS(number, text string) error {
 	if !numberPattern.MatchString(number) || len(text) == 0 || len(text) > 2048 {
 		return fmt.Errorf("invalid number or message")
 	}
-	if !m.Snapshot().Registered {
-		return fmt.Errorf("modem is not registered on cellular network")
+	if err := m.Snapshot().RequireRegistration(); err != nil {
+		return err
 	}
 	// sms.To assumes international numbering even without '+'. Preserve local
 	// numbers and short codes as network-interpreted addresses instead.

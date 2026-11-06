@@ -3,6 +3,7 @@ package winmodem
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,11 +22,11 @@ func TestDisconnectedDesktopCannotTransmitAndKeepsArchive(t *testing.T) {
 	if _, err := m.ExecuteATSilent("ATD123456;", time.Millisecond); err == nil {
 		t.Fatal("offline AT unexpectedly accepted")
 	}
-	if err := m.SendSMS("123456", "test"); err == nil {
-		t.Fatal("offline SMS accepted")
+	if err := m.SendSMS("123456", "test"); !errors.Is(err, ErrDisconnected) {
+		t.Fatalf("offline SMS result: %v", err)
 	}
-	if err := m.DialCall("123456"); err == nil {
-		t.Fatal("offline call accepted")
+	if err := m.DialCall("123456"); !errors.Is(err, ErrDisconnected) {
+		t.Fatalf("offline call result: %v", err)
 	}
 	if _, err := m.RunNetwork(NetworkRequest{Action: "radio-diagnose"}); err == nil {
 		t.Fatal("offline network operation accepted")
@@ -51,5 +52,45 @@ func TestDisconnectedDesktopCannotTransmitAndKeepsArchive(t *testing.T) {
 	}
 	if m.SMSReceiverStatus().Ready || forwarded.Load() != 0 {
 		t.Fatal("offline receiver advertised readiness or replayed old messages")
+	}
+}
+
+type failedWritePort struct {
+	*fakePort
+	err error
+}
+
+func (p *failedWritePort) Write(b []byte) (int, error) {
+	p.fakePort.Write(b[:1])
+	return 1, p.err
+}
+
+func TestWriteFailureInvalidatesSessionAndPreventsAnotherSubmission(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		writeErr error
+		wantErr  error
+	}{
+		{"broken-pipe", io.ErrClosedPipe, io.ErrClosedPipe},
+		{"short-write", nil, io.ErrShortWrite},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, port := testModem()
+			m.status.Registered = true
+			m.port = &failedWritePort{fakePort: port, err: tc.writeErr}
+
+			if err := m.SendSMS("123456", "test"); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("failed submission returned %v", err)
+			}
+			if s := m.Snapshot(); s.Connected || s.Registered || !port.closed {
+				t.Fatalf("broken session remained available: %+v", s)
+			}
+			if err := m.SendSMS("123456", "test"); !errors.Is(err, ErrDisconnected) {
+				t.Fatalf("repeated submission returned %v", err)
+			}
+			if len(port.writes) != 1 {
+				t.Fatalf("unexpected further writes: %q", port.writes)
+			}
+		})
 	}
 }

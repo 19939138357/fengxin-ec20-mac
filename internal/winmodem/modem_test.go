@@ -183,7 +183,7 @@ func (f *fakePort) Write(b []byte) (int, error) {
 func (f *fakePort) Close() error { f.closed = true; return nil }
 func testModem() (*Modem, *fakePort) {
 	f := &fakePort{}
-	m := &Modem{port: f, lines: make(chan string, 32), done: make(chan struct{}), pcm: make(chan int, 8)}
+	m := &Modem{port: f, status: Status{Connected: true}, lines: make(chan string, 32), done: make(chan struct{}), pcm: make(chan int, 8)}
 	f.lines = m.lines
 	return m, f
 }

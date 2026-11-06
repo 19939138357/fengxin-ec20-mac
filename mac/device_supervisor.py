@@ -2,6 +2,7 @@
 """Recover a desktop gateway after USB loss, without retrying business requests."""
 import base64
 import fcntl
+import http.client
 import json
 import os
 from pathlib import Path
@@ -62,7 +63,7 @@ class RecoveryPolicy:
         self.last_attempt = now
         self.offline_since = None
 
-    def should_reconnect(self, epoch, status, now, device_free):
+    def should_reconnect(self, epoch, status, now):
         # No restart for searching/no signal while the control channel works.
         if status is None:
             return False
@@ -71,7 +72,7 @@ class RecoveryPolicy:
             return False
         if self.offline_since is None:
             self.offline_since = now
-        if epoch is None or not device_free:
+        if epoch is None:
             return False
         if now - self.last_attempt < self.cooldown or now - self.offline_since < self.quiet_period:
             return False
@@ -79,6 +80,8 @@ class RecoveryPolicy:
 
 
 class Supervisor:
+    probe_interval = 5
+
     def __init__(self, base, session, cfg):
         self.base = Path(base)
         self.session = session
@@ -87,6 +90,7 @@ class Supervisor:
         self.retiring = None
         self.stop_requested = False
         self.policy = RecoveryPolicy()
+        self.next_probe_at = 0
 
     def desired(self):
         current = read_session(self.base)
@@ -124,13 +128,15 @@ class Supervisor:
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
             with opener.open(request, timeout=2) as response:
                 value = json.loads(response.read())
-            modem = value.get('modem', {})
+            if not isinstance(value, dict):
+                return None
+            modem = value.get('modem')
             if (value.get('version') != '1.0.0-fengxin' or value.get('desktop') is not True
-                    or modem.get('port') != 'usb:2c7c:0125'
+                    or not isinstance(modem, dict) or modem.get('port') != 'usb:2c7c:0125'
                     or not isinstance(modem.get('connected'), bool)):
                 return None
             return {'connected': modem['connected']}
-        except (OSError, ValueError):
+        except (OSError, ValueError, http.client.HTTPException):
             return None
 
     def spawn(self):
@@ -175,9 +181,14 @@ class Supervisor:
         if self.core.poll() is not None:
             self.event('gateway_exited', code=self.core.returncode)
             return False  # User/API exit and unrelated crashes are not restarted.
+        # Keep checking process exit and explicit stop every tick. Hardware
+        # discovery and the shared device lock are only needed for recovery.
+        if now < self.next_probe_at:
+            return True
+        self.next_probe_at = now + self.probe_interval
         status = self.probe()
-        epoch = self.epoch()
-        if self.policy.should_reconnect(epoch, status, now, self.device_free()):
+        epoch = self.epoch() if status is not None and not status['connected'] else None
+        if self.policy.should_reconnect(epoch, status, now) and self.device_free():
             if self.desired():
                 self.event('usb_reconnect_requested', usb_epoch=epoch)
                 self.retire_core('usb_reconnect')
